@@ -19,7 +19,7 @@ var option={
 }
 var bookId = _arg[0] || '21241'
 var len = -1
-var result = []
+
 var errorArr = []
 var name = 'result'
 var url = 'https://www.555x.org/read/'+bookId+'.html'
@@ -28,9 +28,27 @@ request(url,option,function(error,res,body){
     var $=cheerio.load(body);
     len = $('.read_list').find('a').length || 1
     name = $('.view_t').text() || 'result'
+    action(1)
+})
+// 递归回调，异步变同步
+function action(id) {
+    if(id<=len) {
+        getGroupData(id,function() {
+            action(id+100)
+        });
+        
+    } else {
+        console.log('全部完成！')
+        return false
+    }
+}
+// 一次100页保证速度
+function getGroupData(i, callback) {
     var promiseArr = []
+    var result = []
     var lastBad = []
-    for(let index=1;index<=len;index++) {
+    var maxPage = (i+100)<len?(i+100):len
+    for(let index=i;index<=maxPage;index++) {
         promiseArr.push(getdata(index))
     }
     Promise.allSettled(promiseArr).then((values)=> {
@@ -44,7 +62,6 @@ request(url,option,function(error,res,body){
                 errorArr.push(item.reason)
             }
         })
-        // updateToFile()
         console.log('重新请求章节：',errorArr)
         if(errorArr.length>0) {
             var badPromsies = []
@@ -67,56 +84,55 @@ request(url,option,function(error,res,body){
                     return parseInt(a.id) - parseInt(b.id)
                 })
                 if(lastBad.length>0) {
-                    console.log('缺失章节',lastBad,'其余成功')
+                    console.log('缺失页数',lastBad,'其余成功')
                 } else {
-                    console.log('全部成功！')
+                    console.log(`${i}页至${maxPage}页全部成功`)
                 }
-                updateToFile()
+                appendToFile(result)
+                callback()
             })
         } else {
-            console.log('全部成功！')
-            updateToFile()
+            console.log(`${i}页至${maxPage}页全部成功`)
+            appendToFile(result)
+            callback()
         }
-    })
-})
-
-
-// 通过分页ID请求获取页面数据
-
-function getdata(id) {
-    let url0 = 'https://www.555x.org/read/'+bookId+'_'+id+'.html'
-    return new Promise((resolve,reject)=> {
-        setTimeout(()=> {
-            request(url0, function(error,res,body) {
-                if(!body) {
-                    console.log('body为空',id)
-                    reject(id)
-                    return
-                }
-                var $=cheerio.load(body);
-                $('.view_page').remove()
-                var text = $('#view_content_txt').text()
-                if(text) {
-                    console.log(id+'/'+len)
-                    resolve({
-                        id,
-                        text
-                    })
-                } else {
-                    console.log('页面信息空，id为',id)
-                    reject(id)
-                }
-            }).on('error', function() {
-                console.log('获取页面错误，id为',id)
-                reject(id)
-            })
-        },3)
     })
 }
 
-function updateToFile() {
+// 每个请求返回一个promise
+function getdata(id) {
+    let url0 = 'https://www.555x.org/read/'+bookId+'_'+id+'.html'
+    return new Promise((resolve,reject)=> {
+        request(url0, function(error,res,body) {
+            if(!body) {
+                console.log('body为空',id)
+                reject(id)
+                return
+            }
+            var $=cheerio.load(body);
+            $('.view_page').remove()
+            var text = $('#view_content_txt').text()
+            if(text) {
+                console.log(id+'/'+len)
+                resolve({
+                    id,
+                    text
+                })
+            } else {
+                console.log('页面信息空，id为',id)
+                reject(id)
+            }
+        }).on('error', function() {
+            console.log('获取页面错误，id为',id)
+            reject(id)
+        })
+    })
+}
+
+function appendToFile(result) {
+    var txtName = './public/'+name+'.txt';
     result.map(item => {
-        fs.appendFileSync('./public/'+name+'.txt',item.text , function (err, data) {
+        fs.appendFileSync(txtName,item.text , function (err, data) {
             if (err) throw err ;console.log('生成文件失败')
         })
     })
